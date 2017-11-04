@@ -1,0 +1,196 @@
+文件的上传和下载学习笔记
+一、文件上传
+	1.提供表单允许用户通过表单选择文件进行上传
+		表单必须是POST提交
+		文件输入框必须有name属性,只有有name属性的输入项浏览器才会进行提交
+		需要设置enctype属性值为multipart/form-data
+
+		POST /Day15/upload.jsp HTTP/1.1
+		Accept: text/html, application/xhtml+xml, */*
+		Referer: http://localhost/Day15/upload.jsp
+		Accept-Language: zh-CN
+		User-Agent: Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)
+		Content-Type: multipart/form-data; boundary=---------------------------7de1e62806e0
+		Accept-Encoding: gzip, deflate
+		Host: localhost
+		Content-Length: 394
+		Connection: Keep-Alive
+		Cache-Control: no-cache
+		Cookie: JSESSIONID=818C14110CA7BFD1FC90610866A220E8
+
+		-----------------------------7de1e62806e0
+		Content-Disposition: form-data; name="description1"
+
+		xxxx
+		-----------------------------7de1e62806e0
+		Content-Disposition: form-data; name="description2"
+
+		zzzz
+		-----------------------------7de1e62806e0
+		Content-Disposition: form-data; name="file1"; filename="ip.txt"
+		Content-Type: text/plain
+
+		192
+		-----------------------------7de1e62806e0--
+
+	2.在Servlet中将上传的文件保存在服务器的硬盘中
+		①：commons-fileupload 核心API 分析
+			1、DiskFileItemFactory 磁盘文件项工厂类 
+				public DiskFileItemFactory(int sizeThreshold, java.io.File repository)  构造工厂时，指定内存缓冲区大小和临时文件存放位置
+
+				public void setSizeThreshold(int sizeThreshold) 设置内存缓冲区大小，默认10K
+
+				public void setRepository(java.io.File repository)设置临时文件存放位置，默认System.getProperty("java.io.tmpdir"). 
+
+				内存缓冲区： 上传文件时，上传文件的内容优先保存在内存缓冲区中，当上传文件大小超过缓冲区大小，就会在服务器端产生临时文件 
+				临时文件存放位置： 保存超过了内存缓冲区大小上传文件而产生临时文件 
+				* 产生临时文件可以通过 FileItem的delete方法删除 
+
+			2、ServletFileUpload 文件上传核心类 
+				static boolean  isMultipartContent(javax.servlet.http.HttpServletRequest request)  判断request的编码方式是否为multipart/form-data
+
+				java.util.List 	parseRequest(javax.servlet.http.HttpServletRequest request) 解析request，将请求体每个部分封装FileItem对象，返回List<FileItem>
+
+				void setFileSizeMax(long fileSizeMax) 设置单个文件上传大小  和 void  setSizeMax(long sizeMax) 设置总文件上传大小 
+
+				void setHeaderEncoding(java.lang.String encoding)  设置编码集 解决上传文件名乱码 ***** 
+
+				void setProgressListener(ProgressListener pListener) 设置文件上传监听器 （用来监控文件上传进度）
+				* 上传时间、剩余大小、速度、剩余时间 
+
+			3、FileItem 表示文件上传表单中 每个数据部分 
+				boolean isFormField()  判断该数据项是否为文件上传项，true 不是文件上传 false 是文件上传
+				if(fileItem.isFormField()){
+				   // 不是上传项
+				   java.lang.String getFieldName()  获得普通表单项name属性
+				   java.lang.String getString() / java.lang.String getString(java.lang.String encoding) 获得普通表单项value属性 传入编码集用来解决输入value乱码 
+				}else{
+				   // 是上传项
+				   java.lang.String getName() 获得上传文件名 （注意IE6存在路径）
+				   java.io.InputStream 	getInputStream() 获得上传文件内容输入流
+				   // 上传文件
+				   void delete()  删除临时文件（删除时，必须要管理输入输出流）
+				}
+
+				注意事项：因为文件上传表单采用编码方式multipart/form-data 与传统url编码不同，所有getParameter 方法不能使用 setCharacterEncoding 无法解决输入项乱码问题 
+		②：文件上传需要注意的问题
+			1.上传文件的中文乱码
+				1.1 解决文件的乱码
+					ServletFileUpload.setHeaderEncoding("UTF-8")
+				1.2 解决普通输入项的乱码（注意，表单类型为multipart/form-data的时候，设置request的编码是无效的）
+					FileItem.setString("UTF-8");  //解决乱码
+
+			2.在处理表单之前，要记得调用：
+				ServletFileUpload.isMultipartContent方法判断提交表单的类型，如果该方法返回true，则按上传方式处理，否则按照传统方式处理表单即可。
+
+
+			3.设置解析器缓冲区的大小，以及临时文件的删除
+				设置解析器缓冲区的大小  DiskFileItemFactory.setSizeThreshold(1024*1024);
+				临时文件的删除：在程序中处理完上传文件后，一定要记得调用item.delete()方法，以删除临时文件
+
+			4.在做上传系统时，千万要注意上传文件的保存目录，这个上传文件的保存目录绝对不能让外界直接访问到。
+				upload文件夹和temp文件夹都要放在web-inf目录下保护起来,防止上传入侵和访问其他用户上传资源的问题
+			5.限制上传文件的类型
+				在处理上传文件时，判断上传文件的后缀名是不是允许的
+
+			6.限制上传文件的大小
+				调用解析器的ServletFileUpload.setFileSizeMax(1024*1024*5);就可以限制上传文件的大小，如果上传文件超出限制，则解析器会抛FileUploadBase.FileSizeLimitExceededException异常，程序员通过是否抓到这个异常，进而就可以给用户友好提示。
+
+
+			7.如何判断空的上传输入项
+				String filename = item.getName().substring(item.getName().lastIndexOf("\\")+1);  //""
+				if(filename==null || filename.trim().equals("")){
+					continue;
+				}
+
+			8、为避免上传文件的覆盖，程序在保存上传文件时，要为每一个文件生成一个唯一的文件名
+				public String generateFileName(String filename){
+					//83434-83u483-934934
+					return UUID.randomUUID().toString() + "_" + filename;
+				}
+
+			9、为避免在一个文件夹下面保存超过1000个文件，影响文件访问性能，程序应该把上传文件打散后存储。
+				public String generateSavePath(String path,String filename){
+					int hashcode = filename.hashCode();  //121221
+					int dir1 = hashcode&15;
+					int dir2 = (hashcode>>4)&0xf;
+					
+					String savepath = path + File.separator + dir1 + File.separator + dir2;
+					File file = new File(savepath);
+					if(!file.exists()){
+						file.mkdirs();
+					}
+					return savepath;
+				}
+
+			10、监听上传进度
+					fileUpload.setProgressListener(new ProgressListener(){
+					Long beginTime = System.currentTimeMillis();
+					public void update(long bytesRead, long contentLength, int items) {
+						BigDecimal br = new BigDecimal(bytesRead).divide(new BigDecimal(1024),2,BigDecimal.ROUND_HALF_UP);
+						BigDecimal cl = new BigDecimal(contentLength).divide(new BigDecimal(1024),2,BigDecimal.ROUND_HALF_UP);
+						System.out.print("当前读取的是第"+items+"个上传项,总大小"+cl+"KB,已经读取"+br+"KB");
+						//剩余字节数
+						BigDecimal ll = cl.subtract(br);
+						System.out.print("剩余"+ll+"KB");
+						//上传百分比
+						BigDecimal per = br.multiply(new BigDecimal(100)).divide(cl,2,BigDecimal.ROUND_HALF_UP);
+						System.out.print("已经完成"+per+"%");
+						//上传用时
+						Long nowTime = System.currentTimeMillis();
+						Long useTime = (nowTime - beginTime)/1000;
+						System.out.print("已经用时"+useTime+"秒");
+						//上传速度
+						BigDecimal speed = new BigDecimal(0);
+						if(useTime!=0){
+							speed = br.divide(new BigDecimal(useTime),2,BigDecimal.ROUND_HALF_UP);
+						}
+						System.out.print("上传速度为"+speed+"KB/S");
+						//大致剩余时间
+						BigDecimal ltime = new BigDecimal(0);
+						if(!speed.equals(new BigDecimal(0))){
+							ltime = ll.divide(speed,0,BigDecimal.ROUND_HALF_UP);
+						}
+						System.out.print("大致剩余时间为"+ltime+"秒");
+						
+						System.out.println();
+					}
+					
+				});
+
+
+			11、在web页面中添加动态上传输入项
+二、文件下载 
+	常见文件下载有两种编写方式 
+	1、超链接直接指向下载资源 
+		如果文件格式浏览器识别，将直接打开文件，显示在浏览器上， 如果文件格式浏览器不识别，将弹出下载窗口 
+		对于浏览器识别格式的文件，通过另存为进行下载 
+
+		客户端访问服务器静态资源文件时，静态资源文件是通过 缺省Servlet返回的，在tomcat配置文件conf/web.xml 找到 --- org.apache.catalina.servlets.DefaultServlet
+
+	2、编写服务器程序，读取服务器端文件，完成下载 
+		必须设置两个头信息 ，来自MIME协议  Content-Type  Content-Disposition 
+
+		response.setContentType(getServletContext().getMimeType(filename));
+		response.setHeader("Content-Disposition", "attachment;filename=" + filename); // 以附件形式打开，不管格式浏览器是否识别 
+
+	3、下载案例：指定一个磁盘目录，通过树形结构遍历，遍历磁盘目录下及其子目录中文体 ，提供下载 
+		* 遍历一个树形目录结构中所有文件 
+
+		a、广度非递归 遍历目录中所有文件 
+
+		b、使用get方式提交连接含有中文时 
+			<a href="/day21/downloadList?path=D:\TTPmusic\何晟铭\何晟铭 - 爱的供养.mp3">何晟铭 - 爱的供养.mp3</a><br/> 
+			需手动对get提交中文进行URL编码  -----  <c:url >	
+
+		c、如果下载文件是中文名，设置 response.setHeader("Content-Disposition", "attachment;filename=" + filename); 出现附件名乱码
+			不同浏览器处理下载附件名乱码 处理方式不同 ，例如 IE使用URL编码 、FF使用 BASE64编码 
+
+			通过USER-AGENT 请求头信息字段，判断来访者浏览器类型 
+			** 问题：火狐浏览器 在使用MimeUtility 进行Base64编码 时存在问题 ，如果字符串中没有中文，无法进行编码 
+			解决：采用手动BASE64 编码 
+			BASE64Encoder base64Encoder = new BASE64Encoder();
+			filename = "=?utf-8?B?" + base64Encoder.encode(filename.getBytes("utf-8")) + "?=";
+
+	
+

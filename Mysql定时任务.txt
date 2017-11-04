@@ -1,0 +1,55 @@
+//设置Mysql开启定时任务
+SET GLOBAL event_scheduler = 1;
+//查看是否开启定时任务
+SHOW VARIABLES LIKE 'event_scheduler';
+
+
+
+CREATE PROCEDURE charge_order_procedure ()  
+BEGIN  
+INSERT INTO tbl_charge_order_info_all(id,user_order_id,app_id,app_name,channel_id,product_id,product_name,product_price,user_id,province_id,province,model,provider_id,order_type,order_param,pay_type,pay_name,order_status,status_code,status_desc,begin_time,finished_time,`interval`,collector_id,create_time) SELECT id,user_order_id,app_id,app_name,channel_id,product_id,product_name,product_price,user_id,province_id,province,model,provider_id,order_type,order_param,pay_type,pay_name,order_status,status_code,status_desc,begin_time,finished_time,`interval`,collector_id,create_time FROM tbl_charge_order_info where date_format(create_time,'%Y-%m-%d') <= date_sub(curdate(),interval 1 day);
+delete from tbl_charge_order_info where date_format(create_time,'%Y-%m-%d') <= date_sub(curdate(),interval 1 day);
+END;
+
+create event if not exists charge_order_event  
+ON SCHEDULE EVERY 1 DAY STARTS '2016-07-19 05:10:00' 
+on completion preserve  
+do call charge_order_procedure();
+
+
+//date_format(create_time,'%Y-%m-%d') >= date_sub(curdate(),interval 7 day) AND 
+
+//ON SCHEDULE EVERY 1 WEEK STARTS '2016-07-19 05:15:00' 
+
+CREATE PROCEDURE order_procedure ()  
+BEGIN  
+INSERT INTO tbl_order_info_all(id,link_id,pay_type,product_id,third_party_key,product_name,prod_identification,user_id,user_company,amounts,order_param,status,content_id,consume_code,cpid,version_id,province_id,province_id_self,province,channel_id,user_token,status_detial,status_desc,notify_state,create_time) SELECT id,link_id,pay_type,product_id,third_party_key,product_name,prod_identification,user_id,user_company,amounts,order_param,status,content_id,consume_code,cpid,version_id,province_id,province_id_self,province,channel_id,user_token,status_detial,status_desc,notify_state,create_time FROM tbl_order_info where date_format(create_time,'%Y-%m-%d') <= date_sub(curdate(),interval 1 day);
+delete from tbl_order_info where date_format(create_time,'%Y-%m-%d') <= date_sub(curdate(),interval 1 day);
+END;
+
+create event if not exists order_event  
+ON SCHEDULE EVERY 1 DAY STARTS '2016-07-19 05:15:00' 
+on completion preserve  
+do call order_procedure();
+
+//date_format(create_time,'%Y-%m') = date_format(date_sub(curdate(),interval 1 month),'%Y-%m')
+
+CREATE PROCEDURE user_procedure ()  
+BEGIN  
+INSERT INTO tbl_user_info_all(id,user_token,status,app_id,channel,create_time) SELECT id,user_token,status,app_id,channel,create_time FROM tbl_user_info where date_format(create_time,'%Y-%m-%d') <= date_sub(curdate(),interval 1 day);
+delete from tbl_user_info where date_format(create_time,'%Y-%m-%d') <= date_sub(curdate(),interval 1 day);
+END;
+
+create event if not exists user_event  
+ON SCHEDULE EVERY 1 DAY STARTS '2016-07-19 05:20:00' 
+on completion preserve  
+do call user_procedure();
+
+
+
+
+关闭定时任务
+alter event charge_order_event ON COMPLETION PRESERVE DISABLE;
+
+开启定时任务
+alter event charge_order_event ON COMPLETION PRESERVE ENABLE; 

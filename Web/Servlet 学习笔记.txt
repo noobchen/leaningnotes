@@ -1,0 +1,352 @@
+Servlet 学习笔记
+一、Servlet概述
+	1.sun提供的一种动态web资源开发技术.本质上就是一段java小程序.可以将Servlet加入到Servlet容器中运行.
+	    *Servlet容器 -- 能够运行Servlet的环境就叫做Servlet容器. --- tomcat
+	    *web容器 -- 能够运行web应用的环境就叫做web容器 --- tomcat
+	2.开发Servlet的两个步骤
+		（1）步骤一：写一个java程序实现Servlet接口（此处直接继承了默认实现类GenericServlet）
+				package cn.itheima;
+				import java.io.*;
+				import javax.servlet.*;
+				
+				public class FirstServlet extends GenericServlet{
+					public void service(ServletRequest req, ServletResponse res) throws ServletException, java.io.IOException{
+							res.getOutputStream().write("My FirstServlet!".getBytes());
+					}
+				
+				}
+				
+		（2）将编译好的带包的.class放到WEB-INF/classes下以外，还要配置web应用的 web.xml注册Servlet
+				<servlet>
+			        <servlet-name>FirstServlet</servlet-name>
+			        <servlet-class>cn.itheima.FirstServlet</servlet-class>
+		    	</servlet>
+			    <servlet-mapping>
+			        <servlet-name>FirstServlet</servlet-name>
+			        <url-pattern>/FirstServlet</url-pattern>
+			    </servlet-mapping>
+二、Servlet的详述
+	1.生命周期：一件事物什么时候生，什么时候死，在生存期间必然会做的事情，所有这些放在一起就是该事物的声明周期。
+	2.Servlet的生命周期：
+		通常情况下，servlet第一次被访问的时候在内存中创建对象，在创建后立即调用init()方法进行初始化。对于每一次请求都掉用service(req,resp)方法处理请求，此时会用Request对象封装请求信息，并用Response对象（最初是空的）代表响应消息，传入到service方法里供使用。当service方法处理完成后，返回服务器，服务器根据Response中的信息组织称响应消息返回给浏览器。响应结束后servlet并不销毁，一直驻留在内存中等待下一次请求。直到服务器关闭或web应用被移除出虚拟主机，servlet对象销毁并在销毁前调用destroy()方法做一些善后的事情。
+	3.Servlet接口的继承结构
+		Servlet接口：定义了一个servlet应该具有的方法，所有的Servlet都应该直接或间接实现此接口
+		|
+		|----GenericServlet：对Servlet接口的默认实现，通用Servlet，这是一个抽象类，其中的大部分方法都做了默认实现，只有service方法是一个抽象方法需要继承者自己实现
+					|
+					|----HttpServlet:对HTTP协议进行了优化的Servlet，继承自GenericServlet类，并且实现了其中的service抽象方法，默认的实现中判断了请求的请求方式，并根据请求方式的不同分别调用不同的doXXX()方法。通常我们直接继承HttpServlet即可
+				
+
+	4.web.xml注册Servlet的注意事项
+		4.1利用<servlet><servlet-mapping>标签注册一个Servlet
+			<servlet>
+		        <servlet-name>FirstServlet</servlet-name>
+		        <servlet-class>cn.itheima.FirstServlet</servlet-class>  注意：此处要的是一个Servlet的完整类名，不是包含.java或.class扩展的文件路径
+	    	</servlet>
+		    <servlet-mapping>
+		        <servlet-name>FirstServlet</servlet-name>
+		        <url-pattern>/FirstServlet</url-pattern>
+		    </servlet-mapping>
+    	
+    	4.2一个<servlet>可以对应多个<servlet-mapping>
+    	4.3可以用*匹配符配置<serlvet-mapping>,但是要注意，必须是*.do或者/开头的以/*结束的路径。
+    		~由于匹配符的引入有可能一个虚拟路径会对应多个servlet-mapping，此时哪个最像找哪个servlet，并且*.do级别最低。
+    	4.4可以为<servlet>配置<load-on-startup>子标签，指定servlet随着服务器的启动而加载，其中配置的数值指定启动的顺序
+	   		<servlet>
+					<servlet-name>invoker</servlet-name>
+					<servlet-class>
+						org.apache.catalina.servlets.InvokerServlet
+					</servlet-class>
+					<load-on-startup>2</load-on-startup>
+			</servlet>
+		4.5缺省servlet：如果一个servlet的对外访问路径被设置为/，则该servlet就是一个缺省servlet，其他servlet不处理的请求都由它来处理
+				~在tomcat目录的conf/web.xml中配置了缺省servlet，对静态资源的访问和错误页面的输出就是由这个缺省servlet来处理的。如果我们自己写一个缺省servlet把爸爸web.xml中的缺省servlet覆盖的话，会导致静态web资源无法访问。所以不推荐配置。
+		4.6servlet的线程安全问题
+				4.6.1由于通常情况下，一个servlet在内存只有一个实例处理请求，当多个请求发送过来的时候就会有多个线程操作该servlet对象，此时可能导致线程安全问题。
+						(1)serlvet的成员变量可能存在线程安全问题
+							*实验：定义一个成员变量 int i = 0；在doXXX()方法中进行i++操作并输出i值到客户端，此时由于延迟可能导致线程安全问题
+						(2)serlvet操作资源文件时，多个线程操作同一文件引发线程安全问题
+							*实验：请求带着一个参数过来，servlet将请求参数写入到一个文件，再读取该文件，将读取到的值打印到客户端上，有可能有线程安全问题
+							
+				4.6.2解决方法
+						(1)利用同步代码块解决问题。缺陷是，同一时间同步代码块只能处理一个	请求，效率很低下，所以同步代码块中尽量只包含核心的导致线程安全问题的代码。
+						(2)为该servlet实现SingleThreadModel接口，此为一个标记接口，被标记的servlet将会在内存中保存一个servlet池，如果一个线程来了而池中没有servlet对象处理，则创建一个新的。如果池中有空闲的servlet则直接使用。这并不能真的解决线程安全问题。此接口已经被废弃。
+						(3)两种解决方案都不够完美，所以尽量不要在servlet中出现成员变量。
+三、ServletConfig
+	1.代表servlet配置的对象，可以在web.xml中<servlet>中配置
+		<servlet>
+		    <servlet-name>Demo5Servlet</servlet-name>
+		    <servlet-class>cn.itheima.Demo5Servlet</servlet-class>
+		    <init-param>
+		    	<param-name>data1</param-name>
+		    	<param-value>value1</param-value>
+		    </init-param>
+	  	</servlet>
+	  然后在servlet中利用this.getServletConfig()获取ServletConfig对象，该对象提供了getInitParameter()和getInitParameterNames()方法，可以遍历出配置中的配置项。
+	  不想在servlet中写死的内容可以配置到此处。
+四、ServletContext
+	1.代表当前web应用的对象。
+	
+	2.作为域对象使用，在不同servlet之间传递数据,作用范围是整个web应用
+		生命周期：当web应用被加载进容器时创建代表整个web应用的ServletContext对象。当服务器关闭或web应用被移除出容器时，ServletContext对象跟着销毁。
+		~域：一个域就理解为一个框，这里面可以放置数据，一个域既然称作域，他就有一个可以被看见的范围，这个范围内都可以对这个域中的数据进行操作，那这样的对象就叫做域对象。
+
+		void setAttribute(String,Object);
+        Object getAttribute(String);
+        void removeAttribute(String);
+
+
+	3.在web.xml可以配置整个web应用的初始化参数，利用ServletContext去获得
+		<context-param>
+			<param-name>param1</param-name>
+			<param-value>pvalue1</param-value>
+		</context-param>
+		this.getServletContext().getInitParameter("param1")
+		this.getServletContext().getInitParameterNames()
+
+		请求参数 parameter --- 浏览器发送过来的请求中的参数信息
+	    初始化参数 initparameter --- 在web.xml中为Servlet或ServletContext配置的初始化时带有的基本参数
+	    域属性 attribute --- 四大作用域中存取的键值对
+	
+	4.在不同servlet之间进行转发
+		this.getServletContext().getRequestDispatcher("/servlet/Demo10Servlet").forward(request, response);
+		方法执行结束，service就会返回到服务器，再有服务器去调用目标servlet，其中request会重新创建，并将之前的request的数据拷贝进去。
+	
+	
+	5.读取资源文件
+			5.1由于相对路径默认相对的是java虚拟机启动的目录，所以我们直接写相对路径将会是相对于tomcat/bin目录，所以是拿不到资源的。如果写成绝对路径，当项目发布到其他环境时，绝对路径就错了。
+			
+			5.2为了解决这个问题ServletContext提供了this.getServletContext().getRealPath(path)，给进一个资源的虚拟路径，将会返回该资源在当前环境下的真实路径。
+			this.getServletContext().getResourceAsStream(path)，给一个资源的虚拟路径返回到该资源真实路径的流。
+			path 为相对Web工程根目录的路径。
+
+			5.3当在非servlet下获取资源文件时，就没有ServletContext对象用了，此时只能用类加载器
+				classLoader.getResourceAsStream(path)，此方法利用类加载器直接将资源加载到内存中，有更新延迟的问题，以及如果文件太大，占用内存过大。
+				classLoader.getResource(path).getPath()，直接返回资源的真实路径，没有更新延迟的问题。
+				path为相对于classes文件夹下的第一层目录的相对路径
+
+
+五、Response
+	1.Resonse的继承结构：
+			ServletResponse -- 通用的response提供了一个响应应该具有最基本的属性和方法
+					|
+					|-HttpServletResponse -- 在ServletResponse的基础上针对于HTTP协议增加了很多强化的属性和方法
+	2.Response代表响应，于是响应消息中的 状态码、响应头、实体内容都可以由它进行操作。
+	3.利用Response输出数据到客户端
+			response.getOutputStream（）.write("中文".getBytes())输出数据，这是一个字节流，是什么字节输出什么字节，而浏览器默认用平台字节码打开服务器发送的数据，如果服务器端使用了非平台码去输出字符的字节数据就需要明确的指定浏览器编码时所用的码表，以防止乱码问题。response.addHeader("Content-type","text/html;charset=gb2312")
+
+			response.getWriter().write(“中文”);输出数据，这是一个字符流，response会将此字符进行转码操作后输出到浏览器，这个过程默认使用ISO8859-1码表，而ISO8859-1中没有中文，于是转码过程中用?代替了中文，导致乱码问题。可以指定response在转码过程中使用的目标码表，防止乱码。response.setCharcterEncoding("gb2312");
+
+			其实response还提供了setContentType("text/html;charset=gb2312")方法，此方法会设置content-type响应头，通知浏览器打开的码表，同时设置response的转码用码表，从而一行代码解决乱码。
+			还可以利用html头中的<meta>元素指定编码格式，将<meta http-equiv="content-type" content="text/html;charset=UTF-8" />内容返回给客户端浏览器。浏览器会解析<meta>元素从而使用正确的编码打开内容。
+			*注意：response.setHeader("Content-Type","text/html; charset=UTF-8"); 不要写成response.setHeader("Content-Type","text/html, charset=UTF-8");  这是个错误的内容，浏览器不能正常解析，就变成了一个下载页面。
+	4.利用Response 设置 content-disposition头实现文件下载
+			设置响应头content-disposition为“attachment;filename=xxx.xxx”
+			利用流将文件读取进来，再利用Response获取响应流输出
+			如果文件名为中有中文，一定要进行URL编码，编码所用的码表一定要是utf-8
+	5.refresh头控制定时刷新
+			设置响应头Refresh为一个数值，指定多少秒后刷新当前页面
+			设置响应头Refresh为 3;url=/Day05/index.jsp,指定多少秒后刷新到哪个页面
+			可以用来实现注册后“注册成功，3秒后跳转到主页”的功能
+			在HTML可以利用<meta http-equiv= "" content="">标签模拟响应头的功能。
+	6.利用response设置expires、Cache-Control、Pragma实现浏览器是否缓存资源，这三个头都可以实现，但是由于历史原因，不同浏览器实现不同，所以一般配合这三个头使用
+		6.1控制浏览器不要缓存（验证码图片不缓存）设置expires为0或-1设置Cache-Control为no-cache、Pragma为no-cache
+		6.2控制浏览器缓存资源。即使不明确指定浏览器也会缓存资源，这种缓存没有截至日期。当在地址栏重新输入地址时会用缓存，但是当刷新或重新开浏览器访问时会重新获得资源。
+			如果明确指定缓存时间，浏览器缓存是，会有一个截至日期，在截至日期到期之前，当在地址栏重新输入地址或重新开浏览器访问时都会用缓存，而当刷新时会重新获得资源。
+	7.Response实现请求重定向
+		7.1古老方法：response.setStatus(302);response.addHeader("Location","URL");
+		7.2快捷方式：response.sendRedirect("URL");
+	8.输出验证码图片
+	9.Response注意的内容：
+		9.1对于一次请求，Response的getOutputStream方法和getWriter方法是互斥，只能调用其一，特别注意forward后也不要违反这一规则。
+		9.2利用Response输出数据的时候，并不是直接将数据写给浏览器，而是写到了Response的缓冲区中，等到整个service方法返回后，由服务器拿出response中的信息组成HTTP响应消息返回给浏览器。
+		9.3service方法返回后，服务器会自己检查Response获取的OutputStream或者Writer是否关闭，如果没有关闭，服务器自动帮你关闭，一般情况下不要自己关闭这两个流。
+
+六、Request
+	ServletRequest -- 通用request，提供一个request应该具有的最基本的方法
+        |
+        |--HttpServletRequest -- ServletRequest的孩子，针对http协议进行了进一步的增强
+	1.获取客户机信息
+		Uri资源定位符，url互联网资源定位符
+		getRequestURL方法返回客户端发出请求完整URL
+		getRequestURI方法返回请求行中的资源名部分,在权限控制中常用
+		getQueryString 方法返回请求行中的参数部分
+		getRemoteAddr方法返回发出请求的客户机的IP地址
+		getMethod得到客户机请求方式
+		getContextPath 获得当前web应用虚拟目录名称，特别重要！！！，工程中所有的路径请不要写死，其中的web应用名要以此方法去获得。
+	2.获取请求头信息
+        获得客户机请求头
+            getHeader(name)方法 --- String 
+            getHeaders(String name)方法 --- Enumeration<String>
+            getHeaderNames方法 --- Enumeration<String>
+        获得具体类型客户机请求头
+            getIntHeader(name)方法  --- int
+            getDateHeader(name)方法 --- long(日期对应毫秒)
+
+        *防盗链
+    
+    3.获取请求参数
+        乱码的问题:
+            浏览器以什么编码来发送请求参数? 浏览器以什么编码打开的表单页面,就用什么编码发送这个页面提交的数据
+            服务器以什么编码来打开呢?如果不指定,则使用ISO8859-1,这样如果请求参数中有中文必然就乱码了
+            
+            对于POST提交,可以设置request.setCharacterEncoding("utf-8");明确的通知服务器以浏览器发送过来的编码来打开数据就可以解决乱码
+            但是上面的方法只对请求中实体内容部分起作用,所以GET提交的乱码并不能解决.
+            对于GET提交的乱码,只能手动的进行编解码从而解决乱码问题:
+                String username = request.getParameter("username");
+		        username = new String(username.getBytes("iso8859-1"),"utf-8");
+	4.利用请求域传递对象
+		生命周期：在service方法调用之前由服务器创建，传入service方法。整个请求结束，request生命结束。
+		作用范围：整个请求链。
+		作用：在整个请求链中共享数据，最常用的：在Servlet中处理好的数据要交给Jsp显示，此时参数就可以放置在Request域中带过去。
+
+		setAttribute
+        getAttribute
+        removeAttribute
+    5.实现请求转发和请求包含
+        (1)请求转发:
+            this.getServletContext().getRequestDispatcher("").forward(request,response);
+            request.getRequestDispatcher("").forward(request,response);
+            
+            ~请求转发是希望将请求交给另外一个资源执行,所以应该保证只有最后真正要执行的资源才能够输出数据,所以:
+               
+                *请求转发时,如果已经有数据被写入到了response的缓冲区,但是这些数据还没有被发送到客户端,则请求转发时,这些数据将会被清空.但是清空的只是响应中的实体内容部分,头信息并不会被清空.
+                *而请求转发时已经有数据被打给了浏览器,那么再进行请求转发,不能成功,会抛出异常,原因是响应已经结束了,再转发交给其他人没意义了
+                *在最终输出数据的Servlet执行完成后,response实体内容中的数据将会被设置为已提交的状态,再往里写数据也不会起作用
+                
+                -------使用以上三条,就保证了最终只有一个Servlet能够向浏览器输出数据,所以
+                   
+                *一个Servlet里两次请求转发也是不可以的,一次请求交给两人处理自然也是不行.
+       
+      
+        
+        (2)请求包含:将两个资源的输出进行合并后输出
+            this.getServletContext().getRequestDispatcher("").include(request,response);
+            request.getRequestDispatcher("").include(request,response);
+            
+            *被包含的Servlet程序不能改变响应消息的状态码和响应头，如果它里面存在这样的语句，这些语句的执行结果将被忽略
+            *常被用来进行页面布局
+
+
+        (3)三种资源处理方式的区别
+            请求重定向
+                response.sendRedirect();
+            请求转发
+                request.getRequestDispatcher().forward();
+            请求包含
+                request.getRequestDispatcher().include();
+                
+                
+            请求重定向和请求转发的区别:
+                请求重定向地址栏会发生变化.请求转发地址栏不发生变化.
+                请求重定向两次请求两次响应.请求转发一次请求一次响应.
+                
+                如果需要在资源跳转时利用request域传递域属性则必须使用请求转发
+                如果希望资源跳转后修改用户的地址栏则使用请求重定向
+                如果使用请求转发也可以重定向也可以,则优先使用请求转发,减少浏览器对服务器的访问次数减轻服务器的压力.
+    =========================================================================================================================
+		常用地址的写法:
+		         
+		    /   获取Url资源
+		    \   获取硬盘资源    
+		        
+		    绝对路径:以/开头的路径就叫做绝对路径,绝对路径在相对于的路径上直接拼接得到最终的路径
+		    相对路径:不以/开头的路径就叫做相对路径,相对路径基于当前所在的路径计算的到最终的路径
+		    硬盘路径:以盘符开头的路径就叫做硬盘路径.是哪个路径就是哪个路径.没有相对于谁的问题
+
+		    虚拟路径: --写虚拟路径时都使用绝对路径
+		        如果路径是给浏览器用的,这个路径相对于虚拟主机,所以需要写上web应用的名称
+		        如果路径是给服务器用的,这个路径相对于web应用,所以可以省写web应用的名称
+		      <a href="/Day04/.....">
+		      <form action="/Day04/...">
+		      <img src="/Day04/....">
+		      response.setHeader("Location","/Day04/....");
+		      response.setHeader("refresh","3;url=/Day04/...");
+		      response.sendRedirect("/Day04/...");
+		      request.getRequestDispathce("/index.jsp").forward();
+		      request.getRequestDispathce("/index.jsp").include();
+		   
+		   
+		    真实路径: --写真实路径时都使用相对路径
+		        根据原理,具体问题具体分析
+		        
+		        servletContext.getRealPath("config.properties");//--给一个相对于web应用目录的路径
+		        classLoader.getResource("../../config.properties");//--给一个相对于类加载目录的路径
+		        
+		        File file = new File("config.properties");//--相对于程序的启动目录
+		        new InputStream("config.properties");//--相对于程序的启动目录
+七、会话技术
+	1.浏览器开始访问网站到访问网站结束期间产生的多次请求响应组合在一起叫做一次会话
+    会话的过程中会产生会话相关的数据，我们需要将这些数据保存起来。
+
+    cookie是客户端技术
+		数据保存在客户端,这个信息可以保存很长时间
+		数据随时有可能被清空,所以cookie保存的数据是不太靠谱的
+		数据被保存在了客户端,随时有可能被人看走,如果将一些敏感信息比如用户名密码等信息存在cookie中,可能有安全问题
+
+	session是服务器端技术
+		数据保存在服务区端,相对来说比较稳定和安全
+		占用服务器内存,所以一般存活的时间不会太长,超过超时时间就会被销毁.我们要根据服务器的压力和session 的使用情况合理设置session的超时时间,既能保证session的存活时间够用,同时不用的session可以及时销毁减少对服务器内存的占用.
+
+    2.Cookie   
+        Cookie是基于set-Cookie响应头和Cookie请求头工作的,服务器可以发送set-Cookie请求头命令浏览器保存一个cookie信息,浏览器会在访问服务器时以Cookie请求头的方式带回之前保存的信息
+        
+        request.getCookies();
+        
+        response.addCookie(Cookie c);
+        
+        new  Cookie(String name,String value)//Cookie在构造的时候就需要设定好cookie的名字和值
+        getName();
+        getValue();
+        setValue();
+        !!setMaxAge与getMaxAge方法  
+            -- 一个Cookie如果没有设置过MaxAge则这个Cookie是一个会话级别的Cookie,这个Cookie信息打给浏览器后浏览器会将它保存在浏览器的内存中,这意味着只要浏览器已关闭随着浏览器内存的销毁Cookie信息也就消失了.一个Cookie也可以设置MaxAge,浏览一一旦发现收到的Cookie被设置了MaxAge,则会将这个Cookie信息以文件的形式保存在浏览器的临时文件夹中,保存到指定的时间到来位置.这样一来即使多次开关浏览器,由于这些浏览器都能在临时文件夹中看到cookie文件,所以在cookie失效之前cookie信息都存在.
+            -- 想要命令浏览器删除一个Cookie,发送一个同名同path的cookie,maxage设置为0,浏览器以名字+path识别cookie,发现同名同path,cookie覆盖后立即超时被删除,从而就删除了cookie.
+            
+        !!setPath与getPath方法
+            -- 用来通知浏览器在访问服务器中的哪个路径及其子路径时带着当前cookie信息过来
+                如果不明确设置,则默认的路径是发送Cookie的Servlet所在的路径
+                http://localhost/Day05/servlet/...
+        setDomain与getDomain方法
+            -- 用来通知浏览器在访问哪个域名的时候带着当前的cookie信息.但是要注意,现代的浏览器一旦发现cookie设置过domain信息则会拒绝接受这个Cookie.我们平常不要设置这个方法	
+    3.Session
+        Session 是一个域
+            !!作用范围:当前会话范围
+            !!生命周期:
+                当程序第一次调用到request.getSession()方法时说明客户端明确的需要用到session此时创建出对应客户端的Session对象.
+                当session超过30分钟(这个时间是可以在web.xml文件中进行修改的)没有人使用则认为session超时销毁这个session.
+                程序中明确的调用session.invalidate()方法可以立即杀死session.
+                当服务器被非正常关闭时,随着虚拟机的死亡而死亡.
+                *如果服务器是正常关闭,还未超时的session会被以文件的形式保存在服务器的work目录下,这个过程叫做session的钝化.下次再正常启动服务器时,钝化着的session会被恢复到内存中,这个过程叫做session的活化.
+            !!作用:在会话范围内共享数据
+		
+		!!session 的原理:
+			request.getSession()方法会检查请求中有没有JSESSIONID cookie,如果有拿出他的值找到对应的session为他服务.
+			如果没有则检查请求的URL后有没有以参数的形式带着JSESSIONID过来,如果有则找到对应的Session为浏览器服务器
+			如果还找不到则认为这个浏览器没有对应的Session,创建一个Session然后再在响应中添加JSESSIONID cookie,值就是这个Session 的id
+
+			默认情况下,JSESSIONID 的path为当前web应用的名称,并且没有设置过MaxAge,是一个会话级别的cookie.
+			
+			这意味着一旦关闭浏览器再新开浏览器时,由于JSESSIONID丢失,会找不到之前的Session
+			我们可以手动的发送JSESSIONID cookie,名字和path设置的和自动发送时一样,但是设置一下MaxAge,使浏览器除了在内存中保存JSESSIONID信息以外还在临时文件夹中以文件的形式保存,这样即使重开浏览器仍然可以使用之前的session
+
+		URL重写:
+			如果浏览器禁用了Cookie,浏览器就没有办法JSESSIONID cookie,这样就用不了Session了.
+			我们可以使用URL重写的机制,在所有的超链接后都以参数的形式拼接JSESSIONID信息,从而在点击超链接时可以使用URL参数的方式待会JSESSIONID,从而使用Session
+			将URL进行重写拼接上JSESSIONID的过程就叫做URL重写
+
+			request.getSession() --在URL重写之前一定要先创建出Session,才有Session id,才能进行重写
+			response.encodeURL()--- 一般的地址都用这个方法重写
+			response.encodeRedirectURL() --- 如果地址是用来进行重定向的则使用这个方法
+			
+			*url重写的方法一旦发现浏览器带回了任意cookie信息,则认为客户端没有禁用cookie,就不会再进行重写操作
+		*request.getSession()和request.getSession(false);的不同之处：前面的方法一调用，就会去检查是否有对应的session，没有就创建，有就取回。后面的方法只会去检查，如果有就取回，如果没有也不创建。
+	4.ServeltContext 、reqeust、session域的比较
+		servletContext 的作用域是整个web应用，随着服务器启动而创建，如果应用被移除出主机或服务器关闭则销毁。
+		request 的作用域是整个请求链，每一次请求都会创建一个request，当请求结束时request销毁。
+		session 的作用于是整个会话，第一次调用reqeust.getSession时创建，当一段时间没有使用或服务器关闭或调用session.invalidate方法时销毁
+
+		什么时候用ServeltContext什么时候用reqeust什么时候用session？
+		如果一个数据只是用来显示的话就用request域
+		如果一个数据除了用来显示以外我一会还要用，这时候用session
+		如果一个数据除了用来显示以外还要给别人用，这时候用ServletContext域

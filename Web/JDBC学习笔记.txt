@@ -1,0 +1,483 @@
+JDBC
+一、数据库驱动的概念、JDBC
+	数据库厂商提供的用来操作数据库用的jar包就是数据库驱动。各个厂商如果提供各自的数据库驱动的话会导致开发人员学习成本太高，所以sun公司提供了一套数据库驱动应该遵循的接口规范，这套规范就叫做JDBC，本质上是很多的接口。
+	由于所有的数据库驱动都遵循JDBC规范，我们在学习和使用数据库时只要学习JDBC中的接口就可以了。
+二、JDBC快速入门
+	*在数据库中建立好表
+	*在程序中导入数据库驱动包
+	1.注册数据库驱动
+	DriverManager.registerDriver(new Driver());
+	//缺点一：观察mysqlDriver源码发现此方法导致了数据库驱动被注册了两次。
+	  缺点二：整个程序域mysql数据库驱动绑定增加了耦合性
+	推荐做法Class.forName(“com.mysql.jdbc.Driver”);
+	2.获取连接
+	DriverManager.getConnection(url, user, password);
+	~url的写法：
+		Oracle写法：jdbc:oracle:thin:@localhost:1521:sid
+		SqlServer—jdbc:microsoft:sqlserver://localhost:1433; DatabaseName=sid
+		MySql—jdbc:mysql://localhost:3306/sid
+	~url可以接的参数
+		user、password
+		useUnicode=true&characterEncoding=UTF-8
+
+	3.获取传输器
+		createStatement()：创建向数据库发送sql的statement对象。
+		prepareStatement(sql) ：创建向数据库发送预编译sql的PrepareSatement对象。
+	4.利用传输器执行sql语句获取结果集
+		executeQuery(String sql) ：用于向数据发送查询语句。
+		executeUpdate(String sql)：用于向数据库发送insert、update或delete语句
+		execute(String sql)：用于向数据库发送任意sql语句
+
+	5.遍历结果集取出结构
+		ResultSet以表的样式在内存中保存了查询结果，其中还维护了一个游标，最开始的时候游标在第一行之前，每调用一次next()方法就试图下移一行，如果移动成功返回true；
+		ResultSet还提供了很多个Get方法，用来获取查询结果中的不同类型的数据
+		除了next方法，还有以下方法可以用来遍历结果集：
+			next()：移动到下一行
+			Previous()：移动到前一行
+			absolute(int row)：移动到指定行
+			beforeFirst()：移动resultSet的最前面。
+			afterLast() ：移动到resultSet的最后面。
+	6.释放资源
+		conn是一个有限的资源，用完立即要释放表
+		stat占用内存，所以使用完后也要释放
+		rs占用内存，所以使用完后也要释放
+		释放时后创建的先释放
+		if(rs != null){
+			try {
+				rs.close();
+			} catch (SQLException e) {
+				e.printStackTrace();
+			} finally{
+				rs = null;
+			}
+		}
+		if(stat != null){
+			try {
+				stat.close();
+			} catch (SQLException e) {
+				e.printStackTrace();
+			} finally{
+				stat = null;
+			}
+		}
+		if(conn != null){
+			try {
+				conn.close();
+			} catch (SQLException e) {
+				e.printStackTrace();
+			} finally{
+				conn = null;
+			}
+		}
+		
+三、PreparedStatement
+	1.Sql注入：由于jdbc程序在执行的过程中sql语句在拼装时使用了由页面传入参数，如果用户恶意传入一些sql中的特殊关键字，会导致sql语句意义发生变化，这种攻击方式就叫做sql注入，参考用户注册登录案例。
+	2.PreparedStatement是Statement的孩子，不同的是，PreparedStatement使用预编译机制，在创建PreparedStatement对象时就需要将sql语句传入，传入的过程中参数要用?替代，这个过程回导致传入的sql被进行预编译，然后再调用PreparedStatement的setXXX将参数设置上去，由于sql语句已经经过了预编译，再传入特殊值也不会起作用了。
+	3.PreparedStatement使用了预编译机制，sql语句在执行的过程中效率比Statement要高。
+	
+	
+	
+四、大数据
+	1.mysql数据库也可以直至在数据库中保存大文本和大二进制数据，
+		Text
+		TINYTEXT(255)、TEXT(64k)、MEDIUMTEXT(16M)和LONGTEXT(4G)
+		Blob
+		TINYBLOB、BLOB、MEDIUMBLOB和LONGBLOB 
+	2.JDBC去操作大文本：
+		~插入大文本：
+			ps = conn.prepareStatement("insert into Demo2Text values(null,?,?)");
+			ps.setString(1, "钢铁是怎样练成");
+			File file = new File("1.txt");
+			ps.setCharacterStream(2, new FileReader(file), (int) file.length());
+				//1.Exception in thread "main" java.lang.AbstractMethodError: com.mysql.jdbc.PreparedStatement.setCharacterStream(ILjava/io/Reader;J)V
+					//ps.setCharacterStream(2, new FileReader(file), file.length());第三个参数是long型的是从1.6才开始支持的，驱动里还没有开始支持。
+					//解决方案：ps.setCharacterStream(2, new FileReader(file), (int)file.length());
+				//2.Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
+					//文件大小过大，导致PreparedStatement中数据多大占用内存，内存溢出
+					//-Xms256M-Xmx256M
+				//3.com.mysql.jdbc.PacketTooBigException: Packet for query is too large (10886466 > 1048576). You can change this value on the server by setting the max_allowed_packet' variable.
+					//数据库连接传输用的包不够大，传输大文本时报此错误
+					//在my.ini中配置max_allowed_packet指定包的大小
+			~查询大文本：
+				Reader rd = rs.getCharacterStream("content");
+		3.JDBC操作大二进制
+		~插入：
+			ps = conn.prepareStatement("insert into Demo3Blob values(null,?,?)");
+			ps.setString(1, "梦想的力量");
+			File file = new File("1.mp3");
+			ps.setBinaryStream(2, new FileInputStream(file), (int) file.length());
+			
+		~查询
+			InputStream in = rs.getBinaryStream("content");
+五、批处理
+		批处理可以一次性提交多条sql给数据库处理。
+			方法一：
+				String sql1 = “”
+				String sql2 = “”
+
+				Statement.addBatch(sql1);
+				Statement.addBatch(sql2);
+
+				Statement.executeBatch();
+				Statement.clearBatch();
+
+			方法二：
+				String sql = “”
+
+				PreparedStatement.setXX();
+				PreparedStatement.addBatch();
+
+				PreparedStatement.setXX();
+				PreparedStatement.addBatch();
+
+				PreparedStatement.setXX();
+				PreparedStatement.addBatch();
+
+				PreparedStatement.executeBatch();
+				PreparedStatement.clearBatch();
+
+			区别：方法二执行效率更高，但是只能批量执行不同参数的同一sql语句语句
+
+六、获取自增主键
+		String sql = “”
+		PreparedStatement = Connection.prepareStatement(sql,Statement.RETURN_GENERATED_KEYS);
+		PreparedStatement.executeUpdate();
+			
+		ResultSet = PreparedStatement.getGeneratedKeys();
+		if(rs.next()){
+			System.out.println(rs.getInt(1));
+		}
+
+七、调用存储过程
+		PreparedStatement = conn.prepareCall("{call demoSp(?,?)}");//demoSp存储过程名称，？？占位符
+		
+		PreparedStatement.setString(1, "");//设置第一个参数
+		PreparedStatement.registerOutParameter(2, Types.VARCHAR);//设置第二个占位符返回值类型
+		PreparedStatement.execute();
+			
+		PreparedStatement.getString(2);//获取返回值
+
+八、事务
+		1.事务的概念：事务是指逻辑上的一组操作，这组操作要么同时完成要么同时不完成。参考转账操作。
+		2.如果你自己不去控制事务，数据库默认一条sql语句就处在自己单独的事务当中。
+		3.也可以使用命令去开启一个事务：
+				start transaction;--开启事务，这条语句之后的sql语句将处在一个事务当中，这些sql语句并不会立即执行
+				Commit--提交事务，一旦提交事务，事务中的所有sql语句才会执行。
+				Rollback -- 回滚事务，将之前所有的sql取消。
+				
+				conn.setAutoCommit(false);
+				conn.commit();
+				conn.rollback();
+				conn.setSavePoint();
+				conn.rollback(sp);
+				
+		4.事务的四大特性ACID
+			~原子性：事务的一组操作是原子的不可再分割的，这组操作要么同时完成要么同时不完成。
+			~一致性: 事务在执行前后数据的完整性保持不变。数据库在某个状态下符合所有的完整性约束的状态叫做数据库具有完整性。在解散一个部门时应该同时处理员工表中的员工保证这个事务结束后，仍然保证所有的员工能找到对应的部门，满足外键约束。
+			~隔离性：当多个事务同时操作一个数据库时，可能存在并发问题，此时应保证各个事务要进行隔离，事务之间不能互相干扰。
+			~持久性：持久性是指一个事务一旦被提交，它对数据库中数据的改变就是永久性的，不能再回滚。
+			
+		5.事务的隔离性导致的问题（所有的问题都是在某些情况下才会导致问题）
+			脏读:一个事务读取到另一个事务未提交的数据
+	            a 1000
+	            b 1000
+	            
+	            ----------
+	            a:
+	                start transaction;
+	                update account set money=money-100 where name=a;
+	                update account set money=money+100 where name=b;
+	            ----------
+	            b:
+	                start transaction;
+	                select * from account;
+	                    
+	                    a : 900
+	                    b : 1100
+	            ----------
+	            a:
+	                rollback;
+	            ----------
+	            b:
+	                start transaction;
+	                select* from account;
+	                    a: 1000
+	                    b: 1000
+                
+            
+        
+	        不可重复读:在一个事务内读取表中的某一行数据，多次读取结果不同 --- 行级别的问题
+	            a: 1000  1000  1000
+	            b: 银行职员
+	            
+	            ---------
+	            b:start transaction;
+	            select 活期存款 from account where name='a'; ---- 活期存款:1000
+	            select 定期存款 from account where name='a'; ---- 定期存款:1000
+	            select 固定资产 from account where name='a'; ---- 固定资产:1000       
+	                -------
+	                a:
+	                    start transaction;
+	                    update accounset set 活期=活期-1000 where name='a';
+	                    commit;
+	                -------
+	            select 活期+定期+固定 from account where name='a';  --- 总资产:2000
+	            commit;
+	            ----------
+	        
+	        虚读(幻读):是指在一个事务内读取到了别的事务插入的数据，导致前后读取不一致 --- 表级别的问题
+	            a: 1000
+	            b: 1000
+	            d: 银行业务人员
+	            
+	            -----------
+	            d:
+	                start transaction;
+	                select sum(money) from account; --- 2000 元
+	                select count(name) from account; --- 2 个
+	                
+	                ------
+	                c:
+	                    start transaction;
+	                        insert into account values(c,4000);
+	                     commit;
+	                ------
+	               
+	                select sum(money)/count(name) from account; --- 平均:2000元/个
+	                commit;
+	            ------------
+			
+		6.数据库的隔离级别
+			~Read uncommitted：如果将数据库设定为此隔离级别，数据库将会有脏读、不可重复度、幻读的问题。
+			~Read committed：如果将数据库设定为此隔离级别，数据库可以防止脏读，但有不可重复度、幻读的问题。
+			~Repeatable read: 如果将数据库设定为此隔离级别，数据库可以防止脏读、不可重复度，但是不能防止幻读。（Mysql 默认级别）
+			~Serializable：将数据库串行化,可以避免脏读、不可重复读、幻读。
+			
+			安全性来说：Serializable>Repeatable read>Read committed>Read uncommitted
+			效率来说：Serializable<Repeatable read<Read committed<Read uncommitted
+			通常来说，一般的应用都会选择Repeatable read或Read committed作为数据库隔离级别来使用。
+			mysql默认的数据库隔离级别为：REPEATABLE-READ
+			
+			如何查询当前数据库的隔离级别？select @@tx_isolation;
+			如何设置当前数据库的隔离级别？set [global/session] transaction isolation level ...;
+			~此种方式设置的隔离级别只对当前连接起作用。
+				set transaction isolation level read uncommitted;
+				set session transaction isolation level read uncommitted;
+			~此种方式设置的隔离级别是设置数据库默认的隔离级别	
+				set global transaction isolation level read uncommitted;
+
+		7.锁机制：
+			共享锁：共享锁和共享锁可以共存。
+			排他锁：排他锁和所有锁都不能共存。
+			在非串行化下，所有的查询都不加锁，所有的修改操作都会加排他锁。
+			在串行化下，所有的查询都加共享锁，所有的修改都加排他锁。
+			死锁
+	
+		8.更新丢失
+			如果多个线程操作，基于同一个查询结构对表中的记录进行修改，那么后修改的记录将会覆盖前面修改的记录，前面的修改就丢失掉了，这就叫做更新丢失。
+			Serializable可以防止更新丢失问题的发生。其他的三个隔离级别都有可能发生更新丢失问题。
+			Serializable虽然可以防止更新丢失，但是效率太低，通常数据库不会用这个隔离级别，所以我们需要其他的机制来防止更新丢失:
+			
+			乐观锁和悲观锁不是数据库中真正存在的锁，只是人们在解决更新丢失时的不同的解决方案，体现的是人们看待事务的态度。
+			悲观锁：
+				隔离级别不设置为Serializable，防止效率过低。
+				在查询时手动加上排他锁。
+				如果数据库中的数据查询比较多而更新比较少的话，悲观锁将会导致效率低下。
+				
+			乐观锁：
+				在表中增加一个version字段，在更新数据库记录是将version加一，从而在修改数据时通过检查版本号是否改变判断出当前更新基于的查询是否已经是过时的版本。
+				如果数据库中数据的修改比较多，更新失败的次数会比较多，程序需要多次重复执行更新操作。
+
+九、数据库连接池
+	1.连接池概念：
+	2.自己写一个连接池：
+		元数据：数据库，表，列的定义信息
+			DataBaseMetaData：
+				Connection.getMetaData();
+				DataBaseMetaData.getURL();	返回数据库的url链接
+				DataBaseMetaData.getUserName();	返回数据库的用户名
+				DataBaseMetaData.getDatabaseProductName();	返回数据库的名称
+	            DataBaseMetaData.getDatabaseProductVersion();	返回数据的版本号
+	            DataBaseMetaData.getDriverName();	返回驱动程序的名称
+	            DataBaseMetaData.getDriverVersion();	返回驱动程序的版本号
+	            DataBaseMetaData.isReadOnly()	返回数据库是否只读
+
+	        ParameterMetaData：
+	        	PreparedStatement.getParameterMetaData();
+	        	ParameterMetaData.getParameterCount();	获得指定参数的个数
+            	ParameterMetaData.getParameterType();	获得指定参数的sql类型
+
+            ResultSetMetaData：
+            	PreparedStatement.getMetaData();
+
+            	ResultSetMetaData.getColumnCount();	返回resultset对象的列数
+	            ResultSetMetaData.getColumnName();	返回指定列的名称
+	            ResultSetMetaData.getColumnType();	返回指定列的类型
+
+		使自己的连接池在conn调用close方法将连接直接返回池中:
+			需要修改数据返回的connection对象的close方法。
+			修改一个类中某个方法的功能：
+				继承
+				装饰设计模式
+				动态代理模式
+
+
+	3.开源数据库连接池：
+		（1）DBCP
+			BasicDataSource dataSource = new BasicDataSource();
+			String path = this.getClass().getClassLoader().getResource("dbcp.properties").getPath();
+				Properties prop = new Properties();
+				prop.load(new FileInputStream(path));
+				DataSource dataSource = BasicDataSourceFactory.createDataSource(prop);
+			配置文件属性：
+			driverClassName=com.mysql.jdbc.Driver
+			url=jdbc:mysql://localhost:3306/jdbc
+			username=root
+			password=
+			
+			#<!-- 初始化连接 -->
+			initialSize=10
+			
+			#最大连接数量
+			maxActive=50
+			
+			#<!-- 最大空闲连接 -->
+			maxIdle=20
+			
+			#<!-- 最小空闲连接 -->
+			minIdle=5
+			
+			#<!-- 超时等待时间以毫秒为单位 6000毫秒/1000等于60秒 -->
+			maxWait=60000
+			
+		（2）C3P0
+			ComboPooledDataSource dataSource = new ComboPooledDataSource();
+			ComboPooledDataSource dataSource = new ComboPooledDataSource("mySoruce");
+			<?xml version="1.0"?>
+				<c3p0-config>
+				  <default-config>
+					<property  name="driverClass">com.mysql.jdbc.Driver</property >
+					<property name="jdbcUrl">jdbc:mysql:///Day12</property >
+					<property name="user">root</property>
+					<property name="password">root</property>
+				  </default-config>
+				
+				  <!-- This app is massive! -->
+				  <named-config name="mySoruce"> 
+				  	<property  name="driverClass">com.mysql.jdbc.Driver</property >
+					<property name="jdbcUrl">jdbc:mysql:///Day12</property >
+					<property name="user">root</property>
+					<property name="password">root</property>
+				  </named-config>
+				</c3p0-config>
+				
+				driverClass
+				jdbcUrl
+				user
+				password
+				acquireIncrement：当连接池中已经没有连接时，连接池自动获取连接时一次获取的连接个数。
+				initialPoolSize：连接池初始化时，获取连接的个数。
+				maxPoolSize：连接池可以保有的最大的连接的数量。
+				maxIdleTime：当连接空闲多久时释放连接。如果该时间值设置问为0，表示从不释放连接。
+				minPoolSize：连接池应该保有的最小的连接的数量。
+				
+				
+		4.tomcat内置的数据源：tomcat内置了DBCP数据源
+			<1>在tomcat的安装目录下的lib目录下导入数据库驱动包
+			<2>在Context中配置数据源，有五个位置可以配置，参考tomcat文档
+				~在conf/context.xml爸爸Context中配置，这个配置将被tomcat的所有web应用共享
+				In the $CATALINA_BASE/conf/context.xml file: the Context element information will be loaded by all webapps.
+				~在conf/Catalina/localhost/context.xml，这个配置将被当前虚拟主机所共享
+				In the $CATALINA_BASE/conf/[enginename]/[hostname]/context.xml.default file: the Context element information will be loaded by all webapps of that host.
+				~在conf/Catalina/localhost/XXXXXX.xml，这是配置web应用的对外访问路径，这个配置只对当前web应用起作用
+				In individual files (with a ".xml" extension) in the $CATALINA_BASE/conf/[enginename]/[hostname]/ directory. The name of the file (less the .xml extension) will be used as the context path. Multi-level context paths may be defined using #, e.g. foo#bar.xml for a context path of /foo/bar. The default web application may be defined by using a file called ROOT.xml.
+				~在web应用个的META-INF目录下创建context.xml这个配置只对当前web应用起作用
+				Only if a context file does not exist for the application in the $CATALINA_BASE/conf/[enginename]/[hostname]/, in an individual file at /META-INF/context.xml inside the application files. If the web application is packaged as a WAR then /META-INF/context.xml will be copied to $CATALINA_BASE/conf/[enginename]/[hostname]/ and renamed to match the application's context path. Once this file exists, it will not be replaced if a new WAR with a newer /META-INF/context.xml is placed in the host's appBase.
+				~在conf/servler.xml的Host标签下配置Context标签
+				Inside a Host element in the main conf/server.xml.
+			<3>在Cotext中配置：
+			  <Resource name="mySource"  ---在数据源创建好以后绑定到jndi容器中时使用的名字
+		            auth="Container" 
+		            type="javax.sql.DataSource" ---当前对象的类型，默认就是数据源
+		            username="root"  --- 数据库用户名
+		            password="root"  --- 数据库密码
+		            driverClassName="com.mysql.jdbc.Driver" ---数据库驱动名
+		            url="jdbc:mysql:///day12" --- 数据库连接信息
+		            maxActive="8" --- 最大连接数
+		            maxIdle="4"/> --- 最大空闲连接数
+		   <4>在程序中获取数据源：
+		  		Context context = new InitialContext();
+					Context envCtx = (Context)context.lookup("java:comp/env"); 
+					DataSource datasource = (DataSource) envCtx.lookup("mySource");
+
+十、DBUtils 
+	
+	1.DbUtils
+		工具类
+	
+	2.QueryRunner -- 两行代码搞定增删改查
+			
+		(1)QueryRunner() --需要控制事务时,使用这组方法
+			 int	update(Connection conn, String sql) 
+				  Execute an SQL INSERT, UPDATE, or DELETE query without replacement parameters.
+			 int	update(Connection conn, String sql, Object... params) 
+				  Execute an SQL INSERT, UPDATE, or DELETE query.
+			 int	update(Connection conn, String sql, Object param) 
+				  Execute an SQL INSERT, UPDATE, or DELETE query with a single replacement parameter.
+			
+			<T> T query(Connection conn, String sql, ResultSetHandler<T> rsh) 
+				  Execute an SQL SELECT query without any replacement parameters.
+			<T> T query(Connection conn, String sql, ResultSetHandler<T> rsh, Object... params) 
+				  Execute an SQL SELECT query with replacement parameters.
+
+		(2)QueryRunner(DataSource ds) --不需要控制事务用这组方法
+				int	update(String sql) 
+				  Executes the given INSERT, UPDATE, or DELETE SQL statement without any replacement parameters.
+				int	update(String sql, Object... params) 
+				  Executes the given INSERT, UPDATE, or DELETE SQL statement.
+				int	update(String sql, Object param) 
+				  Executes the given INSERT, UPDATE, or DELETE SQL statement with a single replacement parameter.
+
+				<T> T query(String sql, ResultSetHandler<T> rsh) 
+					  Executes the given SELECT SQL without any replacement parameters.
+				<T> T query(String sql, ResultSetHandler<T> rsh, Object... params) 
+					  Executes the given SELECT SQL query and returns a result object.
+
+	3.ResultSetHandler 实现类
+			
+		ArrayHandler:把结果集中的第一行数据转成对象数组。
+		ArrayListHandler：把结果集中的每一行数据都转成一个对象数组，再存放到List中。
+		!!!!BeanHandler：将结果集中的第一行数据封装到一个对应的JavaBean实例中。
+		!!!!BeanListHandler：将结果集中的每一行数据都封装到一个对应的JavaBean实例中，存放到List里。
+		MapHandler：将结果集中的第一行数据封装到一个Map里，key是列名，value就是对应的值。
+		MapListHandler：将结果集中的每一行数据都封装到一个Map里，然后再存放到List
+		ColumnListHandler：将结果集中某一列的数据存放到List中。
+		KeyedHandler(name)：将结果集中的每一行数据都封装到一个Map里(List<Map>)，再把这些map再存到一个map里，其key为指定的列的值。
+		!!!!!ScalarHandler:获取结果集中第一行数据指定列的值,常用来进行单值查询
+
+十一、ThreadLocal 线程范围内共享数据
+
+		threadLocal.set();	
+        threadLocal.get();
+        threadLocal.remove();
+
+		！！！用完数据一定要记得移除数据
+
+		可用在jdbc的事务管理，所有对数据库的操作都使用在ThreadLocal共享的开启了事务的Connection。
+
+十二、jdbc 多表操作
+		涉及到1对多或者多对多的多表查询时，要注意是否必要查出多的一方的数据显示，必要的话也考虑到是否需要分页，以免造成，数据过大内存溢出。
+
+		
+
+
+
+
+
+
+
+
+
+
+
+	
